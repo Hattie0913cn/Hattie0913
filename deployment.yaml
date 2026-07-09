@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  # 和流水线里的 deployment 名称保持一致
+  name: my-python-app
+spec:
+  # 运行1个应用副本
+  replicas: 1
+  selector:
+    matchLabels:
+      app: python-app
+  template:
+    metadata:
+      labels:
+        app: python-app
+    spec:
+      containers:
+      - name: my-python-app
+        # 镜像地址由GitHub Actions流水线自动替换，这里写占位即可
+        image: placeholder-ecr-image
+        # 容器内部程序端口，和app.py、Dockerfile保持一致
+        ports:
+        - containerPort: 8080
+        # 资源限制（可选，规范写法）
+        resources:
+          limits:
+            cpu: "0.5"
+            memory: "512Mi"
+          requests:
+            cpu: "0.2"
+            memory: "256Mi"

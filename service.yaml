@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-python-svc
+spec:
+  # NodePort 类型：允许外部通过EC2公网IP+端口访问应用
+  type: NodePort
+  # 匹配deployment里的标签 app: python-app
+  selector:
+    app: python-app
+  ports:
+    # 容器内部端口8080，和Dockerfile、app.py保持一致
+    - port: 8080
+      targetPort: 8080
+      # 节点暴露端口，范围30000-32767
+      nodePort: 30080
