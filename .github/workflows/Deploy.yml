@@ -47,13 +47,11 @@ jobs:
         uses: Azure/setup-kubectl@v4
 
       # 7. 写入K3s集群配置
-      - name: Setup kubeconfig
+      - name: Write kubeconfig
         run: |
           mkdir -p ~/.kube
-    # 删除所有 \r 回车换行，再写入配置文件
           echo "${{ secrets.KUBE_CONFIG }}" > ~/.kube/config
-    # 打印完整配置，在流水线日志查看第5行内容定位错误
-          cat ~/.kube/config
+
    
       # 8. 更新K3s集群Deployment镜像
       - name: Update k8s deployment
