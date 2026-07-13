@@ -47,7 +47,7 @@ jobs:
         uses: Azure/setup-kubectl@v4
 
       # 7. 写入K3s集群配置
-      - name: Setup kubecontext
+      - name: Set kubernetes Context
         uses: Azure/k8s-set-context@v4
         with:  
           kubeconfig: ${{ secrets.KUBE_CONFIG }}
