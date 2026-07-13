@@ -47,10 +47,29 @@ jobs:
         uses: Azure/setup-kubectl@v4
 
       # 7. base64解码生成kubeconfig
-      - name: Write kubeconfig from base64
+      - name: Write kubeconfig
         run: |
           mkdir -p ~/.kube
-          echo "${{ secrets.KUBE_B64 }}" | base64 -d > ~/.kube/config
+          cat > ~/.kube/config << EOF
+          apiVersion: v1
+          clusters:
+          - cluster:
+              certificate-authority-data: LS0tLS1CRUdJTi...
+              server: https://13.58.193.237:6443
+            name: default
+           contexts:
+          - context:
+              cluster: default
+              user: default
+            name: default
+          current-context: default
+          kind: Config
+          users:
+          - name: default
+            user:
+              client-certificate-data: LS0tLS1CRUdJTi...
+              client-key-data: LS0tLS1CRUdJTi...
+          EOF
 
 # 8. 更新k8s镜像
       - name: Update k8s deployment
