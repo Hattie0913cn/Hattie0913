@@ -49,6 +49,7 @@ jobs:
       # 7. 写入K3s集群配置
       - name: Setup kubeconfig
         run: |
+          mkdir -p ~/.kube
           echo "${{ secrets.KUBE_CONFIG }}" > ~/.kube/config
 
       # 8. 更新K3s集群Deployment镜像
