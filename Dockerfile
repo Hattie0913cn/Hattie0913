@@ -1,5 +1,5 @@
 # 1. 基础镜像：官方Python轻量镜像
-FROM registry.cn-hangzhou.aliyuncs.com/library/python:3.10-slim
+FROM python:3.10-slim
 
 # 2. 设置容器内工作目录
 WORKDIR /app
