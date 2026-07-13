@@ -50,9 +50,7 @@ jobs:
       - name: Setup kubeconfig
         run: |
           mkdir -p ~/.kube
-          cat << EOF > ~/.kube/config
-       ${{ secrets.KUBE_CONFIG }}
-       EOF
+          printf "%s" "${{ secrets.KUBE_CONFIG }}" > ~/.kube/config
           cat ~/.kube/config
    
       # 8. 更新K3s集群Deployment镜像
