@@ -51,7 +51,7 @@ jobs:
         run: |
           mkdir -p ~/.kube
     # 删除所有 \r 回车换行，再写入配置文件
-          echo "${{ secrets.KUBE_CONFIG }}" | sed 's/\r//g' > ~/.kube/config
+          echo "${{ secrets.KUBE_CONFIG }}" > ~/.kube/config
     # 打印完整配置，在流水线日志查看第5行内容定位错误
           cat ~/.kube/config
    
