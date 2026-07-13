@@ -46,19 +46,14 @@ jobs:
       - name: Install kubectl
         uses: Azure/setup-kubectl@v4
 
-      # 7. 写入K3s集群配置
-      - name: Set kubernetes Context
-        uses: Azure/k8s-set-context@v4
-        with:  
-          kubeconfig: ${{ secrets.KUBE_CONFIG }}
+      # 7. base64解码生成kubeconfig
+      - name: Write kubeconfig from base64
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBE_B64 }}" | base64 -d > ~/.kube/config
 
-   
-      # 8. 更新K3s集群Deployment镜像
+# 8. 更新k8s镜像
       - name: Update k8s deployment
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
-          IMAGE_TAG: ${{ github.sha }}
         run: |
           kubectl set image deployment/my-python-app my-python-app=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
 
