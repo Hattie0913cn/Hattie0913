@@ -50,9 +50,8 @@ jobs:
       - name: Write kubeconfig
         run: |
           mkdir -p ~/.kube
-          cat > ~/.kube/config <<'EOF'
-          ${{ secrets.KUBE_CONFIG }}
-          EOF
+          # 使用 base64 -d 进行解码写入
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > ~/.kube/config
           
           chmod 600 ~/.kube/config
 
