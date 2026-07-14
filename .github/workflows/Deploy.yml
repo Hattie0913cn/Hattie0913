@@ -48,10 +48,11 @@ jobs:
 
       # 7. base64解码生成kubeconfig
             # 7. 解码并生成 kubeconfig
+            # 7. 解码并生成 kubeconfig (修复版)
       - name: Write kubeconfig
         run: |
           mkdir -p ~/.kube
-          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > ~/.kube/config
+          echo -n "${{ secrets.KUBE_CONFIG }}" | base64 -d > ~/.kube/config
 
 # 8. 更新k8s镜像
       - name: Update k8s deployment
