@@ -50,10 +50,8 @@ jobs:
       - name: Write kubeconfig
         run: |
           mkdir -p ~/.kube
-          # 使用 base64 -d 进行解码写入
-          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > ~/.kube/config
-          
-          chmod 600 ~/.kube/config
+          echo "${{ secrets.KUBE_CONFIG }}" > ~/.kube/config
+
 
 # 8. 更新k8s镜像
       - name: Update k8s deployment
