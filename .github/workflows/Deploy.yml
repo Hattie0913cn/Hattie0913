@@ -46,17 +46,12 @@ jobs:
       - name: Install kubectl
         uses: Azure/setup-kubectl@v4
 
-      # 7. base64解码生成kubeconfig
-      # 7. base64解码生成kubeconfig (修正版)
+          # Step 7: Decode kubeconfig
       - name: Write kubeconfig
         run: |
-          mkdir -p ~/.kube
-    # 注意这里：使用 echo ... | base64 -d > 文件
-    # 这会将那一长串乱码还原成正常的 yaml 配置文件
-          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > ~/.kube/config
-    
-    # 【可选】建议加上这一行，确保文件权限安全，防止报错
-          chmod 600 ~/.kube/config
+         mkdir -p ~/.kube
+         echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > ~/.kube/config
+         chmod 600 ~/.kube/config
 
 # 8. 更新k8s镜像
       - name: Update k8s deployment
