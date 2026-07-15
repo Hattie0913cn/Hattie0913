@@ -52,7 +52,7 @@ jobs:
     - name: Install kubectl
       uses: azure/setup-kubectl@v4
 
-        # 7-9. 配置集群并部署应用 (包含健康检查)
+              # 7-9. 配置集群并部署应用 (包含健康检查)
     - name: Setup & Deploy to K3s
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
@@ -88,7 +88,7 @@ jobs:
             spec:
               containers:
               - name: ${APP_NAME}
-                image: ${ECR_REGISTRY}/${{ secrets.ECR_REPOSITORY }}:${IMAGE_TAG}
+                image: ${ECR_REGISTRY}/${APP_NAME}:${IMAGE_TAG}
                 ports:
                 - containerPort: 80
         EOF
@@ -98,7 +98,7 @@ jobs:
           --kubeconfig=$KUBE_CONFIG_PATH \
           --insecure-skip-tls-verify
         
-        echo "⏳ 等待部署 rollout 完成..."
+        echo "⏳ 等待部署生效..."
         
         # 4. 等待部署真正生效 (关键步骤！)
         # --timeout=120s: 最多等2分钟，防止网络卡顿导致流程挂起
