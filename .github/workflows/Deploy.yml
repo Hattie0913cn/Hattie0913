@@ -74,7 +74,7 @@ jobs:
           echo "Kubeconfig written to ~/.kube/config"
         env:
           # 在这里统一注入环境变量，安全且规范
-          KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG_DATA }}
+          KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG }}
         
     # 8. 部署或更新应用
     - name: Deploy to K3s
