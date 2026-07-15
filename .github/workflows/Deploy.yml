@@ -53,26 +53,11 @@ jobs:
       uses: azure/setup-kubectl@v4
 
     # 7. 调试与配置 Kubeconfig
-    - name: Debug and Write Kubeconfig
+    - name: Write kubeconfig
       run: |
-        echo "正在检查变量内容..."
-    # 打印长度，看看是不是真的有东西
-        echo "Length of secret: ${#KUBE_CONFIG_DATA}"
-    
-    # 强制写入文件，不管它是不是空的
         mkdir -p ~/.kube
-    # 使用 printf 避免换行问题
-        printf '%s' "$KUBE_CONFIG_DATA" | base64 -d > ~/.kube/config
-    
-        echo "--- 文件内容预览 (前5行) ---"
-        head -n 5 ~/.kube/config
-        echo "---------------------------"
-    
-    # 设置权限
-        chmod 600 ~/.kube/config
-        echo "Config file written."
-     env:
-        KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG }}
+        echo "${{ secrets.KUBE_CONFIG }}" > ~/.kube/config
+
         
     # 8. 部署或更新应用
     - name: Deploy to K3s
