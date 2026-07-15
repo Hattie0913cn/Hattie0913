@@ -52,41 +52,42 @@ jobs:
     - name: Install kubectl
       uses: azure/setup-kubectl@v4
 
-        # 7. 准备 Kubeconfig (确保这一步在你的 Deploy 步骤之前)
-    - name: Setup Kubeconfig
-      run: |
-        # 创建 .kube 目录
-        mkdir -p $HOME/.kube
-        # 将 secrets 中的配置写入文件 (假设你的 secret 名字叫 KUBE_CONFIG_DATA)
-        echo "${{ secrets.KUBE_CONFIG_DATA }}" | base64 -d > $HOME/.kube/config
-        # 【关键】设置环境变量，让 kubectl 知道去哪里找证书
-        echo "KUBECONFIG=$HOME/.kube/config" >> $GITHUB_ENV
-
-    # 8. 部署或更新应用 (修复了认证和语法错误)
-    - name: Deploy to K3s
+           # 7-9. 配置集群并部署应用 (已修正 Secret 名称)
+    - name: Setup & Deploy to K3s
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         IMAGE_TAG: ${{ github.sha }}
+        # 定义配置文件路径变量
+        KUBE_CONFIG_PATH: ${{ runner.temp }}/kubeconfig
       run: |
+        echo "🔧 正在配置 Kubeconfig..."
+        
+        # 1. 写入配置文件
+        # 【注意】这里改成了 KUBE_CONFIG，与你截图中的 Secret 名称一致
+        mkdir -p $HOME/.kube
+        echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > $KUBE_CONFIG_PATH
+        
+        # 检查文件是否生成成功
+        if [ ! -s "$KUBE_CONFIG_PATH" ]; then
+          echo "❌ 错误：Kubeconfig 文件为空，请检查 Secret 'KUBE_CONFIG' 是否正确设置（必须是 Base64 编码）。"
+          exit 1
+        fi
+        
         echo "🚀 正在部署应用到 K3s..."
-
-        # 检查连接是否正常
-        kubectl cluster-info --insecure-skip-tls-verify
-
-        # 使用单行命令解决管道符报错
-        # --validate=false 跳过镜像拉取校验（解决私有仓库报错）
+        
+        # 2. 生成 YAML 并应用
+        # --dry-run=client: 本地生成，不请求服务器
+        # --kubeconfig: 显式指定刚才生成的配置文件
         kubectl create deployment $APP_NAME \
           --image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
-          --replicas=1 \
-          --port=80 \
+          --replicas=1 --port=80 \
           --dry-run=client -o yaml \
+          --kubeconfig=$KUBE_CONFIG_PATH | kubectl apply --kubeconfig=$KUBE_CONFIG_PATH -f -
 
-          | kubectl apply --insecure-skip-tls-verify --validate=false -f -
-
-        echo "✅ 部署指令已发送"
-
-    # 9. 等待部署完成
-    - name: Wait for rollout
-      run: |
-        echo "⏳ 等待 Pod 启动..."
-        kubectl rollout status deployment/$APP_NAME --timeout=120s --insecure-skip-tls-verify
+        echo "⏳ 等待部署 rollout 完成..."
+        # 3. 等待滚动更新完成
+        kubectl rollout status deployment/$APP_NAME \
+          --timeout=300s \
+          --kubeconfig=$KUBE_CONFIG_PATH
+          
+        echo "✅ 部署完成！"
