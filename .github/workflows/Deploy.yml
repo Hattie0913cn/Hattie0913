@@ -60,7 +60,7 @@ jobs:
         mkdir -p ~/.kube
         printf '%s' "$KUBE_CONFIG_DATA" | base64 -d > ~/.kube/config
         
-        # 8. 部署或更新应用 (修复了认证校验报错)
+           # 8. 部署或更新应用 (修复了管道符报错)
     - name: Deploy to K3s
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
@@ -68,17 +68,9 @@ jobs:
       run: |
         echo "🚀 正在部署应用到 K3s..."
 
-        # 核心修改：
-        # 1. 保持管道符在同一行 (解决之前的 syntax error)
-        # 2. 添加 --insecure-skip-tls-verify (解决之前的 x509 证书报错)
-        # 3. 添加 --validate=false (解决现在的 credentials 报错)
-        kubectl create deployment $APP_NAME \
-          --image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
-          --replicas=1 \
-          --port=80 \
-          --dry-run=client -o yaml \
-
-          | kubectl apply --insecure-skip-tls-verify --validate=false -f -
+        # 【关键点】将 kubectl create ... 和 kubectl apply ... 放在同一行，用管道符连接
+        # --insecure-skip-tls-verify 用于跳过之前的证书报错
+        kubectl create deployment $APP_NAME --image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG --replicas=1 --port=80 --dry-run=client -o yaml | kubectl apply --insecure-skip-tls-verify -f -
 
         echo "✅ 部署指令已发送"
 
@@ -86,5 +78,5 @@ jobs:
     - name: Wait for rollout
       run: |
         echo "⏳ 等待 Pod 启动并就绪..."
-        # 这里也建议加上 --insecure-skip-tls-verify 以防万一
+        # 同样加上 --insecure-skip-tls-verify 防止这里也报证书错
         kubectl rollout status deployment/$APP_NAME --timeout=120s --insecure-skip-tls-verify
