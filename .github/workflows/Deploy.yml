@@ -1,110 +1,162 @@
-name: Build & Deploy Python App
+name: Deploy to AWS EC2 K3s
 
 on:
   push:
-    branches: [ main ] # 只有推送到 main 分支才触发
+    branches:
+      - main
 
 env:
   AWS_REGION: ${{ secrets.AWS_REGION }}
+  AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
   ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
-  # 【注意】这里定义你的应用名字，建议和 K8s 里的 Deployment 名字保持一致
-  APP_NAME: "my-python-app" 
+  IMAGE_TAG: ${{ github.sha }}
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-
+    
     steps:
-    # 1. 拉取代码
-    - name: Checkout code
-      uses: actions/checkout@v4
+      # 1. 检出代码
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    # 2. 配置 AWS 凭证
-    - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: ${{ env.AWS_REGION }}
+      # 2. 配置 AWS 凭证
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
 
-    # 3. 登录 ECR
-    - name: Login to Amazon ECR
-      id: login-ecr
-      uses: aws-actions/amazon-ecr-login@v2
+      # 3. 登录 ECR
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
 
-    # 4. 构建 Docker 镜像
-    - name: Build image
-      env:
-        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        IMAGE_TAG: ${{ github.sha }} # 使用 Git 的 commit ID 作为标签，确保唯一
-      run: |
-        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+      # 4. 构建 Docker 镜像并推送到 ECR
+      - name: Build and push Docker image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
 
-    # 5. 推送镜像到 ECR
-    - name: Push image to ECR
-      env:
-        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        IMAGE_TAG: ${{ github.sha }}
-      run: |
-        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+      # 5. 安装 kubectl
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
 
-    # 6. 安装 kubectl 工具
-    - name: Install kubectl
-      uses: azure/setup-kubectl@v4
+      # 6. 写入 kubeconfig
+      - name: Write kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBE_CONFIG }}" > ~/.kube/config
+          chmod 644 ~/.kube/config
 
-              # 7-9. 配置集群并部署应用 (包含健康检查)
-    - name: Setup & Deploy to K3s
-      env:
-        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        IMAGE_TAG: ${{ github.sha }}
-        APP_NAME: my-python-app
-        KUBE_CONFIG_PATH: ${{ runner.temp }}/kubeconfig
-      run: |
-        echo "🔧 正在配置 Kubeconfig..."
-        
-        # 1. 写入配置文件
-        mkdir -p $HOME/.kube
-        echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > $KUBE_CONFIG_PATH
-        
-        echo "🚀 正在生成并部署 Deployment..."
-        
-        # 2. 直接写入标准的 Deployment YAML 文件
-        cat <<EOF > deploy.yaml
-        apiVersion: apps/v1
-        kind: Deployment
-        metadata:
-          name: ${APP_NAME}
-          labels:
-            app: ${APP_NAME}
-        spec:
-          replicas: 1
-          selector:
-            matchLabels:
-              app: ${APP_NAME}
-          template:
-            metadata:
-              labels:
-                app: ${APP_NAME}
-            spec:
-              containers:
-              - name: ${APP_NAME}
-                image: ${ECR_REGISTRY}/${APP_NAME}:${IMAGE_TAG}
-                ports:
-                - containerPort: 80
-        EOF
-        
-        # 3. 应用配置 (强制跳过 TLS 验证)
-        kubectl apply -f deploy.yaml \
-          --kubeconfig=$KUBE_CONFIG_PATH \
-          --insecure-skip-tls-verify
-        
-        echo "⏳ 等待部署生效..."
-        
-        # 4. 等待部署真正生效 (关键步骤！)
-        # --timeout=120s: 最多等2分钟，防止网络卡顿导致流程挂起
-        kubectl rollout status deployment/${APP_NAME} \
-          --kubeconfig=$KUBE_CONFIG_PATH \
-          --insecure-skip-tls-verify \
-          --timeout=120s
-        
-        echo "✅ 部署成功完成！"
+      # 7. kubectl执行部署
+      - name: Deploy to EC2 K3s
+        run: |
+          # 登录 ECR, 这个可能没有必要，后续建了secret文件了，不用这个login
+          #aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | sudo k3s crictl login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+
+          # 定义变量
+          ECR_IMAGE="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ secrets.ECR_REPOSITORY }}:${{ github.sha }}"
+          echo default region: $AWS_DEFAULT_REGION
+          echo region: ${{ secrets.AWS_REGION }}
+
+          # 创建 ECR registry secret
+          # NOTE: 先前用的是先删除再创建的逻辑，但是中间存在一个时间窗口（可能仅几十毫秒）内该 secret 不存在。
+          # 此时如果 kubectl apply -f deployment 恰好执行，或者已有的 Pod 重启，会因为找不到 imagePullSecrets 而拉取镜像失败。
+          # 建议：使用 kubectl create secret --dry-run=client -o yaml | kubectl apply -f - 实现 upsert，一次到位，避免删除操作
+          AWS_PASSWORD=$(aws ecr get-login-password --region ${{ secrets.AWS_REGION }})
+          kubectl create secret docker-registry ecr-registry-secret \
+            --docker-server=${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com \
+            --docker-username=AWS \
+            --docker-password=$AWS_PASSWORD \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          # 生成kube config配置文件
+          kubectl create secret generic kubeconfig-secret \
+            --from-file=config=$HOME/.kube/config \
+            --dry-run=client -o yaml | kubectl apply -f -
+          cat ~/.kube/config | grep server   # 打印 server 地址确认是新 IP
+
+          # 应用 Deployment
+          cat <<EOF | kubectl apply -f -
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: poc7-app
+            labels:
+              app: poc7-app
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: poc7-app
+            template:
+              metadata:
+                labels:
+                  app: poc7-app
+              spec:
+                imagePullSecrets:
+                  - name: ecr-registry-secret
+                containers:
+                  - name: poc7-app
+                    image: ${ECR_IMAGE}
+                    ports:
+                      - containerPort: 8000
+                    env:
+                      - name: HOLMES_DEEPSEEK_API_KEY
+                        value: "${{ secrets.HOLMES_DEEPSEEK_API_KEY }}"
+                      - name: HOLMES_MODEL
+                        value: "${{ secrets.HOLMES_MODEL }}"
+                    volumeMounts:
+                      - name: kubeconfig
+                        mountPath: /root/.kube
+                        readOnly: true
+                    resources:
+                      limits:
+                        memory: "1Gi"
+                        cpu: "500m"
+                      requests:
+                        memory: "256Mi"
+                        cpu: "250m"
+                volumes:
+                  - name: kubeconfig
+                    secret:
+                      secretName: kubeconfig-secret
+                      defaultMode: 0644
+          EOF
+
+          # 应用 Service (NodePort 30000)
+          cat <<EOF | kubectl apply -f -
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: poc7-app-service
+          spec:
+            type: NodePort
+            selector:
+              app: poc7-app
+            ports:
+              - protocol: TCP
+                port: 8000
+                targetPort: 8000
+                nodePort: 30000
+          EOF
+
+          # 重复触发 Pod 重启（kubectl set image 多余）.注释掉。
+          #sudo kubectl set image deployment/poc7-app poc7-app=${ECR_IMAGE}
+
+          # 等待部署完成
+          kubectl rollout status deployment/poc7-app --timeout=150s
+
+          # 验证部署状态
+          echo "=== Pod Status ==="
+          kubectl get pods -l app=poc7-app
+          echo "=== Service Status ==="
+          kubectl get svc poc7-app-service
+          echo "=== Deployment Status ==="
+          kubectl get deployment poc7-app
