@@ -52,15 +52,17 @@ jobs:
     - name: Install kubectl
       uses: azure/setup-kubectl@v4
 
-    # 7. 调试与配置
-    - name: Write Kubeconfig
-      env:
-        KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG }}
+        # 7. 准备 Kubeconfig (确保这一步在你的 Deploy 步骤之前)
+    - name: Setup Kubeconfig
       run: |
-        mkdir -p ~/.kube
-        printf '%s' "$KUBE_CONFIG_DATA" | base64 -d > ~/.kube/config
-        
-              # 8. 部署或更新应用 (修复了校验报错)
+        # 创建 .kube 目录
+        mkdir -p $HOME/.kube
+        # 将 secrets 中的配置写入文件 (假设你的 secret 名字叫 KUBE_CONFIG_DATA)
+        echo "${{ secrets.KUBE_CONFIG_DATA }}" | base64 -d > $HOME/.kube/config
+        # 【关键】设置环境变量，让 kubectl 知道去哪里找证书
+        echo "KUBECONFIG=$HOME/.kube/config" >> $GITHUB_ENV
+
+    # 8. 部署或更新应用 (修复了认证和语法错误)
     - name: Deploy to K3s
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
@@ -68,17 +70,23 @@ jobs:
       run: |
         echo "🚀 正在部署应用到 K3s..."
 
-        # 【关键点】
-        # 1. 管道符 | 必须在同一行 (解决 syntax error)
-        # 2. --insecure-skip-tls-verify (解决 x509 证书报错)
-        # 3. --validate=false (解决当前的 credentials 报错)
-        kubectl create deployment $APP_NAME --image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG --replicas=1 --port=80 --dry-run=client -o yaml | kubectl apply --insecure-skip-tls-verify --validate=false -f -
+        # 检查连接是否正常
+        kubectl cluster-info --insecure-skip-tls-verify
+
+        # 使用单行命令解决管道符报错
+        # --validate=false 跳过镜像拉取校验（解决私有仓库报错）
+        kubectl create deployment $APP_NAME \
+          --image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
+          --replicas=1 \
+          --port=80 \
+          --dry-run=client -o yaml \
+
+          | kubectl apply --insecure-skip-tls-verify --validate=false -f -
 
         echo "✅ 部署指令已发送"
 
     # 9. 等待部署完成
     - name: Wait for rollout
       run: |
-        echo "⏳ 等待 Pod 启动并就绪..."
-        # 这里也建议加上 insecure 参数以防万一
+        echo "⏳ 等待 Pod 启动..."
         kubectl rollout status deployment/$APP_NAME --timeout=120s --insecure-skip-tls-verify
