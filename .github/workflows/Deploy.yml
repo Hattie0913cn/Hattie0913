@@ -58,8 +58,7 @@ jobs:
         KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG }}
       run: |
         mkdir -p ~/.kube
-    # 修复：替换成printf版本
-        printf "%s" "$KUBE_CONFIG_DATA" | base64 -d > ~/.kube/config
+        printf '%s' "$KUBE_CONFIG_DATA" | base64 -d > ~/.kube/config
         
     # 8. 部署或更新应用
     - name: Deploy to K3s
