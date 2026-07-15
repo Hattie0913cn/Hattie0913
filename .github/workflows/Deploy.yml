@@ -52,7 +52,7 @@ jobs:
     - name: Install kubectl
       uses: azure/setup-kubectl@v4
 
-                     # 7-9. 配置集群并部署应用 (修复 x509 证书验证失败)
+        # 7-9. 配置集群并部署应用 (包含健康检查)
     - name: Setup & Deploy to K3s
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
@@ -66,25 +66,45 @@ jobs:
         mkdir -p $HOME/.kube
         echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > $KUBE_CONFIG_PATH
         
-        echo "🚀 正在部署应用到 K3s..."
+        echo "🚀 正在生成并部署 Deployment..."
         
-        # 2. 直接部署 (使用单行命令避免语法错误，并强制跳过 TLS 验证)
-        # --kubeconfig: 指定配置文件
-        # --insecure-skip-tls-verify: 【关键】忽略公网 IP 的证书报错
-        kubectl --kubeconfig=$KUBE_CONFIG_PATH \
-          --insecure-skip-tls-verify \
-          create deployment $APP_NAME \
-          --image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
-          --replicas=1 \
-          --port=80 \
-          --dry-run=client -o yaml | \
-        kubectl --kubeconfig=$KUBE_CONFIG_PATH \
-          --insecure-skip-tls-verify \
-          apply -f -
-          
-        echo "✅ 部署命令已发送"
+        # 2. 直接写入标准的 Deployment YAML 文件
+        cat <<EOF > deploy.yaml
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: ${APP_NAME}
+          labels:
+            app: ${APP_NAME}
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              app: ${APP_NAME}
+          template:
+            metadata:
+              labels:
+                app: ${APP_NAME}
+            spec:
+              containers:
+              - name: ${APP_NAME}
+                image: ${ECR_REGISTRY}/${{ secrets.ECR_REPOSITORY }}:${IMAGE_TAG}
+                ports:
+                - containerPort: 80
+        EOF
         
-        # 3. 等待部署完成 (同样需要加跳过验证参数)
-        kubectl --kubeconfig=$KUBE_CONFIG_PATH \
+        # 3. 应用配置 (强制跳过 TLS 验证)
+        kubectl apply -f deploy.yaml \
+          --kubeconfig=$KUBE_CONFIG_PATH \
+          --insecure-skip-tls-verify
+        
+        echo "⏳ 等待部署 rollout 完成..."
+        
+        # 4. 等待部署真正生效 (关键步骤！)
+        # --timeout=120s: 最多等2分钟，防止网络卡顿导致流程挂起
+        kubectl rollout status deployment/${APP_NAME} \
+          --kubeconfig=$KUBE_CONFIG_PATH \
           --insecure-skip-tls-verify \
-          rollout status deployment/$APP_NAME --timeout=120s
+          --timeout=120s
+        
+        echo "✅ 部署成功完成！"
