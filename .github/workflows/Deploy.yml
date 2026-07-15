@@ -52,14 +52,14 @@ jobs:
     - name: Install kubectl
       uses: azure/setup-kubectl@v4
 
-    # 7. 调试与配置 Kubeconfig
     # 7. 调试与配置
     - name: Write Kubeconfig
+      env:
+        KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG }}
       run: |
         mkdir -p ~/.kube
-    # 关键：用 base64 -d 解码 Secret 里的 Base64 内容，再写入 config 文件
-        echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > ~/.kube/config
-
+    # 修复：替换成printf版本
+        printf "%s" "$KUBE_CONFIG_DATA" | base64 -d > ~/.kube/config
         
     # 8. 部署或更新应用
     - name: Deploy to K3s
