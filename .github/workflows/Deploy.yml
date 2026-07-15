@@ -1,64 +1,86 @@
 name: Build & Deploy Python App
+
 on:
   push:
-    branches: [ main ]
+    branches: [ main ] # 只有推送到 main 分支才触发
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+  # 【注意】这里定义你的应用名字，建议和 K8s 里的 Deployment 名字保持一致
+  APP_NAME: "my-python-app" 
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+
     steps:
-      # 1. 拉取仓库代码
-      - name: Checkout code
-        uses: actions/checkout@v4
+    # 1. 拉取代码
+    - name: Checkout code
+      uses: actions/checkout@v4
 
-      # 2. 配置AWS凭证，登录ECR镜像仓库
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+    # 2. 配置 AWS 凭证
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
 
-      # 3. 登录AWS ECR
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
+    # 3. 登录 ECR
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
 
-      # 4. 构建镜像并打上ECR标签
-      - name: Build image
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
-          IMAGE_TAG: ${{ github.sha }}
-        run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+    # 4. 构建 Docker 镜像
+    - name: Build image
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }} # 使用 Git 的 commit ID 作为标签，确保唯一
+      run: |
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
 
-      # 5. 推送镜像到AWS ECR
-      - name: Push image to ECR
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
-          IMAGE_TAG: ${{ github.sha }}
-        run: |
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+    # 5. 推送镜像到 ECR
+    - name: Push image to ECR
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
 
-      # 6. 安装kubectl工具
-      - name: Install kubectl
-        uses: Azure/setup-kubectl@v4
+    # 6. 安装 kubectl 工具
+    - name: Install kubectl
+      uses: azure/setup-kubectl@v4
 
-          # Step 7: Decode kubeconfig
-      - name: Write kubeconfig
-        run: |
-         mkdir -p ~/.kube
-         echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > ~/.kube/config
-         chmod 600 ~/.kube/config
+    # 7. 配置 Kubeconfig (修复了原代码可能出现的换行符错误)
+    - name: Write kubeconfig
+      run: |
+        mkdir -p ~/.kube
+        # 使用 printf 避免 echo 添加多余的换行符，防止证书校验失败
+        printf '%s' "${{ secrets.KUBE_CONFIG }}" | base64 -d > ~/.kube/config
+        chmod 600 ~/.kube/config
+        
+    # 8. 部署或更新应用
+    - name: Deploy to K3s
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        # 检查应用是否已存在
+        if kubectl get deployment $APP_NAME &>/dev/null; then
+          echo "应用已存在，正在更新镜像..."
+          # 更新现有部署的镜像
+          kubectl set image deployment/$APP_NAME $APP_NAME=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        else
+          echo "应用不存在，正在创建首次部署..."
+          # 如果是第一次，创建一个基础部署 ( replicas=1, port=80 需根据你实际情况改 )
+          kubectl create deployment $APP_NAME --image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          # 可选：暴露服务 (如果是 web 应用)
+          # kubectl expose deployment $APP_NAME --port=80 --target-port=80 --type=LoadBalancer
+        fi
 
-# 8. 更新k8s镜像
-      - name: Update k8s deployment
-        run: |
-          kubectl set image deployment/my-python-app my-python-app=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+    # 9. 等待部署完成
+    - name: Wait for rollout
+      run: |
+        kubectl rollout status deployment/$APP_NAME --timeout=120s
 
-      # 9. 等待应用滚动更新完成
-      - name: Wait rollout finish
-        run: |
-          kubectl rollout status deployment/my-python-app
