@@ -52,12 +52,12 @@ jobs:
     - name: Install kubectl
       uses: azure/setup-kubectl@v4
 
-             # 7-9. 配置集群并部署应用 (修复 x509 证书报错版)
+                 # 7-9. 配置集群并部署应用 (修复语法错误版)
     - name: Setup & Deploy to K3s
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         IMAGE_TAG: ${{ github.sha }}
-        # 定义配置文件路径变量
+        APP_NAME: my-python-app  # 确保这里定义了应用名称
         KUBE_CONFIG_PATH: ${{ runner.temp }}/kubeconfig
       run: |
         echo "🔧 正在配置 Kubeconfig..."
@@ -68,18 +68,23 @@ jobs:
         
         echo "🚀 正在部署应用到 K3s..."
         
-        # 2. 生成 YAML 并应用
-        # --dry-run=client: 本地生成，不请求服务器
-        # --validate=false: 跳过客户端校验
+        # 2. 生成本地 YAML 文件 (避免长命令换行报错)
         kubectl create deployment $APP_NAME \
           --image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
           --replicas=1 --port=80 \
-          --dry-run=client -o yaml \
+          --dry-run=client -o yaml > deploy.yaml
+        
+        # 3. 打印生成的 YAML 供调试 (可选)
+        echo "--- Generated YAML ---"
+        cat deploy.yaml
+        echo "----------------------"
+        
+        # 4. 应用部署 (显式指定 kubeconfig 和跳过验证)
+        kubectl apply -f deploy.yaml \
           --kubeconfig=$KUBE_CONFIG_PATH \
-
-          | kubectl apply --kubeconfig=$KUBE_CONFIG_PATH --insecure-skip-tls-verify -f -
-          
-        echo "✅ 部署命令已发送"
+          --validate=false
+        
+        echo "✅ 部署命令已发送！"
 
     # 10. 等待部署完成
     - name: Wait for rollout
