@@ -47,12 +47,14 @@ jobs:
       - name: Install kubectl
         uses: azure/setup-kubectl@v4
 
-      # 6. 写入 kubeconfig
+            # 6. 写入 kubeconfig
       - name: Write kubeconfig
+        env:
+          KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG }}
         run: |
           mkdir -p ~/.kube
-          echo "${{ secrets.KUBE_CONFIG }}" > ~/.kube/config
-          chmod 644 ~/.kube/config
+          printf '%s' "$KUBE_CONFIG_DATA" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
 
       # 7. kubectl执行部署
       - name: Deploy to EC2 K3s
