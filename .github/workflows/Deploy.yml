@@ -52,12 +52,12 @@ jobs:
     - name: Install kubectl
       uses: azure/setup-kubectl@v4
 
-                 # 7-9. 配置集群并部署应用 (修复语法错误版)
+                     # 7-9. 配置集群并部署应用 (修复 x509 证书验证失败)
     - name: Setup & Deploy to K3s
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         IMAGE_TAG: ${{ github.sha }}
-        APP_NAME: my-python-app  # 确保这里定义了应用名称
+        APP_NAME: my-python-app
         KUBE_CONFIG_PATH: ${{ runner.temp }}/kubeconfig
       run: |
         echo "🔧 正在配置 Kubeconfig..."
@@ -68,30 +68,23 @@ jobs:
         
         echo "🚀 正在部署应用到 K3s..."
         
-        # 2. 生成本地 YAML 文件 (避免长命令换行报错)
-        kubectl create deployment $APP_NAME \
+        # 2. 直接部署 (使用单行命令避免语法错误，并强制跳过 TLS 验证)
+        # --kubeconfig: 指定配置文件
+        # --insecure-skip-tls-verify: 【关键】忽略公网 IP 的证书报错
+        kubectl --kubeconfig=$KUBE_CONFIG_PATH \
+          --insecure-skip-tls-verify \
+          create deployment $APP_NAME \
           --image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
-          --replicas=1 --port=80 \
-          --dry-run=client -o yaml > deploy.yaml
+          --replicas=1 \
+          --port=80 \
+          --dry-run=client -o yaml | \
+        kubectl --kubeconfig=$KUBE_CONFIG_PATH \
+          --insecure-skip-tls-verify \
+          apply -f -
+          
+        echo "✅ 部署命令已发送"
         
-        # 3. 打印生成的 YAML 供调试 (可选)
-        echo "--- Generated YAML ---"
-        cat deploy.yaml
-        echo "----------------------"
-        
-        # 4. 应用部署 (显式指定 kubeconfig 和跳过验证)
-        kubectl apply -f deploy.yaml \
-          --kubeconfig=$KUBE_CONFIG_PATH \
-          --validate=false
-        
-        echo "✅ 部署命令已发送！"
-
-    # 10. 等待部署完成
-    - name: Wait for rollout
-      run: |
-        # 3. 等待滚动更新完成
-        # 必须再次加上 --insecure-skip-tls-verify，否则等待过程也会报 x509 错误
-        kubectl rollout status deployment/$APP_NAME \
-          --timeout=300s \
-          --kubeconfig=${{ runner.temp }}/kubeconfig \
-          --insecure-skip-tls-verify
+        # 3. 等待部署完成 (同样需要加跳过验证参数)
+        kubectl --kubeconfig=$KUBE_CONFIG_PATH \
+          --insecure-skip-tls-verify \
+          rollout status deployment/$APP_NAME --timeout=120s
