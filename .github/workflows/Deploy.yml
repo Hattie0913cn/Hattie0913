@@ -52,17 +52,29 @@ jobs:
     - name: Install kubectl
       uses: azure/setup-kubectl@v4
 
-    # 7. 配置 Kubeconfig (修复了原代码可能出现的换行符错误)v
-    - name: Debug Kubeconfig Base64
-      run: echo "First 50 chars of KUBE_CONFIG_DATA: ${KUBE_CONFIG_DATA:0:50}"
-      env:
-        KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG_DATA }}
-    - name: Write kubeconfig
+    # 7. 调试与配置 Kubeconfig
+    - name: Debug and Write Kubeconfig
       run: |
-        mkdir -p ~/.kube
-        # 使用 printf 避免 echo 添加多余的换行符，防止证书校验失败
-        printf '%s' "${{ secrets.KUBE_CONFIG }}" | base64 -d > ~/.kube/config
-        chmod 600 ~/.kube/config
+        # --- 调试部分 (确认 Secret 是否有值) ---
+        echo "Checking secret length..."
+        if [ -z "$KUBE_CONFIG_DATA" ]; then
+          echo "::error::Secret is empty! Please check GitHub Settings."
+          exit 1
+          fi
+          echo "Secret loaded successfully. Length: ${#KUBE_CONFIG_DATA}"
+          
+          # --- 写入文件部分 ---
+          echo "Writing kubeconfig..."
+          mkdir -p ~/.kube
+          
+          # 使用 printf '%s' 避免 echo 自动添加换行符导致 base64 报错
+          printf '%s' "$KUBE_CONFIG_DATA" | base64 -d > ~/.kube/config
+          
+          chmod 600 ~/.kube/config
+          echo "Kubeconfig written to ~/.kube/config"
+        env:
+          # 在这里统一注入环境变量，安全且规范
+          KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG_DATA }}
         
     # 8. 部署或更新应用
     - name: Deploy to K3s
