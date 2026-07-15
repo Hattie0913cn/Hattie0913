@@ -7,7 +7,7 @@ spec:
   type: NodePort
   # 匹配deployment里的标签 app: python-app
   selector:
-    app: python-app
+    app: my-python-app
   ports:
     # 容器内部端口8080，和Dockerfile、app.py保持一致
     - port: 8080
